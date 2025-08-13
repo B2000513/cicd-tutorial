@@ -29,16 +29,16 @@ jobs:
       # 3. Build CAR
       - name: Build CAR
         run: mvn clean package
-        working-directory: ./HelloWorldService
+        # Assumes pom.xml is in the root; add working-directory if in a subdirectory
 
       # 4. Locate and copy CAR file
       - name: CAR File Location
         run: |
           echo "Listing target directory:"
-          ls -la ${{ github.workspace }}/HelloWorldService/target/
+          ls -la ${{ github.workspace }}/target/
           echo "Searching for CAR file:"
-          find ${{ github.workspace }}/HelloWorldService -type f -name "*.car"
-          CAR_FILE=$(find ${{ github.workspace }}/HelloWorldService -type f -name "*.car" | head -n 1)
+          find ${{ github.workspace }} -type f -name "*.car"
+          CAR_FILE=$(find ${{ github.workspace }} -type f -name "*.car" | head -n 1)
           if [ -z "$CAR_FILE" ]; then
             echo "Error: No CAR file found"
             exit 1
@@ -58,6 +58,8 @@ jobs:
             wso2/wso2mi:4.4.0
           echo "Waiting for WSO2 MI server to start..."
           sleep 90
+          echo "Checking carbonapps directory in container..."
+          docker exec wso2mi ls -la /home/wso2carbon/wso2mi/repository/deployment/server/carbonapps
           echo "Checking server logs..."
           docker logs wso2mi
           echo "Checking CAR deployment..."
@@ -77,5 +79,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: car-artifact
-          path: HelloWorldService/target/*.car
+          path: target/*.car
           retention-days: 7
