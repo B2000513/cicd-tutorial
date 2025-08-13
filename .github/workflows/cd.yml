@@ -51,23 +51,33 @@ jobs:
           cp "$CAR_FILE" ${{ github.workspace }}/deployment/docker/CompositeApps/
           ls -la ${{ github.workspace }}/deployment/docker/CompositeApps/
 
-      # 5. Test CAR File
-      - name: Test CAR File
+      # 5. Build Docker Image
+      - name: Build Docker Image
         run: |
-          docker pull wso2/wso2mi:4.4.0
-          docker run -d --name wso2mi -p 8290:8290 -p 9164:9164 \
-            -v ${{ github.workspace }}/deployment/docker/CompositeApps:/home/wso2carbon/wso2mi/repository/deployment/server/carbonapps \
-            wso2/wso2mi:4.4.0
+          echo "Building Docker image..."
+          docker build -t helloworldservice:1.0.0 -f Dockerfile .
+          echo "Listing built images:"
+          docker images | grep helloworldservice
+
+      # 6. Test CAR File in Custom Image
+      - name: Test CAR File in Custom Image
+        run: |
+          echo "Running custom Docker image..."
+          docker run -d --name wso2mi -p 8290:8290 -p 9164:9164 helloworldservice:1.0.0
           echo "Waiting for WSO2 MI server to start and deploy CAR..."
-          sleep 180
+          sleep 120
           echo "Checking carbonapps directory in container..."
           docker exec wso2mi ls -la /home/wso2carbon/wso2mi/repository/deployment/server/carbonapps
+          echo "Checking file permissions in container..."
+          docker exec wso2mi stat /home/wso2carbon/wso2mi/repository/deployment/server/carbonapps/*.car
           echo "Checking server logs..."
           docker logs wso2mi
           echo "Checking CAR deployment..."
           docker logs wso2mi | grep "Deploying Carbon Application" || echo "No deployment message found"
+          echo "Checking for deployment errors..."
+          docker logs wso2mi | grep -i "error" || echo "No error messages found"
           echo "Checking available APIs..."
-          curl -k https://localhost:9164/management/apis || echo "Failed to list APIs"
+          curl -k --retry 5 --retry-delay 5 --retry-max-time 60 https://localhost:9164/management/apis || echo "Failed to list APIs"
           echo "Testing API endpoint..."
           curl --retry 10 --retry-delay 5 --retry-max-time 120 -f http://localhost:8290/HelloWorld || {
             echo "Error: API test failed"
