@@ -55,8 +55,7 @@ jobs:
       - name: Build Docker Image
         run: |
           echo "Building Docker image..."
-          docker build -t helloworldservice:1.0.0 -f deployment/docker/Dockerfile 
-          deployment/docker/
+          docker build -t helloworldservice:1.0.0 -f ${{ github.workspace }}/deployment/docker/Dockerfile ${{ github.workspace }}/deployment/docker/
           echo "Listing built images:"
           docker images | grep helloworldservice
 
