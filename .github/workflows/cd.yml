@@ -50,18 +50,18 @@ jobs:
           cp "$CAR_FILE" deployment/docker/CompositeApps/
           ls -la deployment/docker/CompositeApps/
 
-        # 5. Test CAR File
+      # 5. Test CAR File
       - name: Test CAR File
         run: |
-          docker pull wso2/wso2mi:latest
+          docker pull wso2/wso2mi:4.4.0
           docker run -d --name wso2mi -p 8290:8290 -p 9164:9164 \
             -v ${{ github.workspace }}/deployment/docker/CompositeApps:/home/wso2carbon/wso2mi/repository/deployment/server/carbonapps \
-            wso2/wso2mi:latest
+            wso2/wso2mi:4.4.0
           echo "Waiting for WSO2 MI server to start..."
-          sleep 60
+          sleep 30
           docker logs wso2mi | grep "Deploying Carbon Application"
           echo "Testing API endpoint..."
-          curl --retry 5 --retry-delay 5 --retry-max-time 60 -f http://localhost:8290/HelloWorld/ || {
+          curl --retry 5 --retry-delay 5 --retry-max-time 60 -f http://localhost:8290/HelloWorld || {
             echo "Error: API test failed"
             exit 1
           }
