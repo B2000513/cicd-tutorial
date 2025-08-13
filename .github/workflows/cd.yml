@@ -50,7 +50,25 @@ jobs:
           cp "$CAR_FILE" deployment/docker/CompositeApps/
           ls -la deployment/docker/CompositeApps/
 
-          # 5. Upload CAR artifact
+        # 5. Test CAR File
+      - name: Test CAR File
+        run: |
+          docker pull wso2/wso2mi:latest
+          docker run -d --name wso2mi -p 8290:8290 -p 9164:9164 \
+            -v ${{ github.workspace }}/deployment/docker/CompositeApps:/home/wso2carbon/wso2mi/repository/deployment/server/carbonapps \
+            wso2/wso2mi:latest
+          echo "Waiting for WSO2 MI server to start..."
+          sleep 60
+          docker logs wso2mi | grep "Deploying Carbon Application"
+          echo "Testing API endpoint..."
+          curl --retry 5 --retry-delay 5 --retry-max-time 60 -f http://localhost:8290/HelloWorld/ || {
+            echo "Error: API test failed"
+            exit 1
+          }
+          docker stop wso2mi
+          docker rm wso2mi
+
+        # 6. Upload CAR artifact
       - name: Upload CAR artifact
         uses: actions/upload-artifact@v4
         with:
