@@ -1,11 +1,11 @@
-name: WSO2 MI CI
+name: Building CAR File
 
 on:
   push:
     branches:
       - main
   pull_request:
-  
+
 
 
 
@@ -49,3 +49,10 @@ jobs:
           mkdir -p deployment/docker/CompositeApps
           cp "$CAR_FILE" deployment/docker/CompositeApps/
           ls -la deployment/docker/CompositeApps/
+
+          # 5. Upload CAR artifact
+      - name: Upload CAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: car-artifact
+          path: deployment/docker/CompositeApps/*.car
