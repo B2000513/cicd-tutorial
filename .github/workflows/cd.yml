@@ -59,7 +59,7 @@ jobs:
             -v ${{ github.workspace }}/deployment/docker/CompositeApps:/home/wso2carbon/wso2mi/repository/deployment/server/carbonapps \
             wso2/wso2mi:4.4.0
           echo "Waiting for WSO2 MI server to start and deploy CAR..."
-          sleep 120
+          sleep 180
           echo "Checking carbonapps directory in container..."
           docker exec wso2mi ls -la /home/wso2carbon/wso2mi/repository/deployment/server/carbonapps
           echo "Checking server logs..."
@@ -69,7 +69,7 @@ jobs:
           echo "Checking available APIs..."
           curl -k https://localhost:9164/management/apis || echo "Failed to list APIs"
           echo "Testing API endpoint..."
-          curl --retry 5 --retry-delay 5 --retry-max-time 60 -f http://localhost:8290/HelloWorld || {
+          curl --retry 10 --retry-delay 5 --retry-max-time 120 -f http://localhost:8290/HelloWorld || {
             echo "Error: API test failed"
             exit 1
           }
