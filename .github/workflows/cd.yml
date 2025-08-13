@@ -6,9 +6,6 @@ on:
       - main
   pull_request:
 
-
-
-
 permissions:
   contents: read
   packages: write
@@ -32,23 +29,25 @@ jobs:
       # 3. Build CAR
       - name: Build CAR
         run: mvn clean package
+        working-directory: ./HelloWorldService
 
+      # 4. Locate and copy CAR file
       - name: CAR File Location
         run: |
           echo "Listing target directory:"
-          ls -la ${{ github.workspace }}/target/
+          ls -la ${{ github.workspace }}/HelloWorldService/target/
           echo "Searching for CAR file:"
-          find ${{ github.workspace }} -type f -name "*.car"
-          CAR_FILE=$(find ${{ github.workspace }} -type f -name "*.car" | head -n 1)
+          find ${{ github.workspace }}/HelloWorldService -type f -name "*.car"
+          CAR_FILE=$(find ${{ github.workspace }}/HelloWorldService -type f -name "*.car" | head -n 1)
           if [ -z "$CAR_FILE" ]; then
             echo "Error: No CAR file found"
             exit 1
           fi
           echo "CAR file found: $CAR_FILE"
           echo "Copying CAR file to deployment/docker/CompositeApps/"
-          mkdir -p deployment/docker/CompositeApps
-          cp "$CAR_FILE" deployment/docker/CompositeApps/
-          ls -la deployment/docker/CompositeApps/
+          mkdir -p ${{ github.workspace }}/deployment/docker/CompositeApps
+          cp "$CAR_FILE" ${{ github.workspace }}/deployment/docker/CompositeApps/
+          ls -la ${{ github.workspace }}/deployment/docker/CompositeApps/
 
       # 5. Test CAR File
       - name: Test CAR File
@@ -58,19 +57,25 @@ jobs:
             -v ${{ github.workspace }}/deployment/docker/CompositeApps:/home/wso2carbon/wso2mi/repository/deployment/server/carbonapps \
             wso2/wso2mi:4.4.0
           echo "Waiting for WSO2 MI server to start..."
-          sleep 30
-          docker logs wso2mi | grep "Deploying Carbon Application"
+          sleep 90
+          echo "Checking server logs..."
+          docker logs wso2mi
+          echo "Checking CAR deployment..."
+          docker logs wso2mi | grep "Deploying Carbon Application" || echo "No deployment message found"
           echo "Testing API endpoint..."
           curl --retry 5 --retry-delay 5 --retry-max-time 60 -f http://localhost:8290/HelloWorld || {
             echo "Error: API test failed"
             exit 1
           }
+          echo "API response:"
+          curl http://localhost:8290/HelloWorld
           docker stop wso2mi
           docker rm wso2mi
 
-        # 6. Upload CAR artifact
+      # 6. Upload CAR artifact
       - name: Upload CAR artifact
         uses: actions/upload-artifact@v4
         with:
           name: car-artifact
-          path: deployment/docker/CompositeApps/*.car
+          path: HelloWorldService/target/*.car
+          retention-days: 7
