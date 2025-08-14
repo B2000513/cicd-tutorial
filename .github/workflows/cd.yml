@@ -63,7 +63,6 @@ jobs:
          echo "Listing built images:"
          docker images | grep helloworldservice
 
-
       # 6. Test CAR File in Custom Image
       - name: Test CAR File in Custom Image
         run: |
