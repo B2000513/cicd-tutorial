@@ -54,10 +54,10 @@ jobs:
       # 5. Build Docker Image
       - name: Build Docker Image
         run: |
-          echo "Building Docker image..."
-          docker build -t helloworldservice:1.0.0 -f ${{ github.workspace }}/deployment/docker/Dockerfile ${{ github.workspace }}/deployment/docker/
-          echo "Listing built images:"
-          docker images | grep helloworldservice
+         echo "Building Docker image..."
+         docker build -t helloworldservice:1.0.0 -f ${{ github.workspace }}/deployment/docker/Dockerfile ${{ github.workspace }}
+         echo "Listing built images:"
+         docker images | grep helloworldservice
 
       # 6. Test CAR File in Custom Image
       - name: Test CAR File in Custom Image
