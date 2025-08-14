@@ -1,0 +1,11 @@
+﻿{
+  "agentId": 21,
+  "agentName": "test",
+  "poolId": 1,
+  "poolName": "Default",
+  "serverUrl": "https://pipelinesghubeus5.actions.githubusercontent.com/XsWVKHmfrlWNiUo7oiLMFBemkSrBKIZH3PBddEhbfq2BQhrNge/",
+  "gitHubUrl": "https://github.com/B2000513/cicd-tutorial",
+  "workFolder": "_work",
+  "useV2Flow": true,
+  "serverUrlV2": "https://broker.actions.githubusercontent.com/"
+}
