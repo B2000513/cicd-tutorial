@@ -32,25 +32,7 @@ jobs:
       # 2. Checkout Repository
       - name: Checkout Repository
         uses: actions/checkout@v4
-      - name: Debug Repository Contents
-        run: |
-          echo "Listing repository contents:"
-          ls -laR ${{ github.workspace }}
-          echo "Checking for pom.xml:"
-          if [ ! -f "${{ github.workspace }}/pom.xml" ]; then
-            echo "Error: pom.xml not found"
-            exit 1
-          fi
-          echo "Checking for API definition:"
-          if [ ! -f "${{ github.workspace }}/src/main/resources/HelloWorld_1.0.0/HelloWorld-1.0.0.xml" ]; then
-            echo "Error: API definition not found"
-            exit 1
-          fi
-          echo "Checking for Dockerfile:"
-          if [ ! -f "${{ github.workspace }}/deployment/docker/Dockerfile" ]; then
-            echo "Error: Dockerfile not found"
-            exit 1
-          fi
+      
 
       # 3. Set up JDK 11
       - name: Set up JDK 11
