@@ -1,0 +1,165 @@
+name: Deploy WSO2 MI to Minikube
+
+on:
+  workflow_dispatch:  # Manual trigger via GitHub UI or API
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  DOCKER_IMAGE_TAG: helloworldservice:1.0.0
+  WSO2_SERVER_HOME: /home/wso2carbon/wso2mi-4.4.0
+
+jobs:
+  deploy-k8s:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout Repository
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. Set up JDK 11
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+
+      # 3. Build CAR File
+      - name: Build CAR File
+        run: |
+          echo "Building CAR file..."
+          mvn clean package
+          echo "Listing target directory:"
+          ls -la ${{ github.workspace }}/target/
+
+      # 4. Inspect and Copy CAR File
+      - name: CAR File Location
+        run: |
+          echo "Searching for CAR file:"
+          find ${{ github.workspace }} -type f -name "*.car"
+          CAR_FILE=$(find ${{ github.workspace }} -type f -name "*.car" | head -n 1)
+          if [ -z "$CAR_FILE" ]; then
+            echo "Error: No CAR file found"
+            exit 1
+          fi
+          echo "CAR file found: $CAR_FILE"
+          echo "Checking CAR file contents:"
+          unzip -l "$CAR_FILE"
+          echo "Copying CAR file to deployment/docker/CompositeApps/"
+          mkdir -p ${{ github.workspace }}/deployment/docker/CompositeApps
+          cp "$CAR_FILE" ${{ github.workspace }}/deployment/docker/CompositeApps/
+          ls -la ${{ github.workspace }}/deployment/docker/CompositeApps/
+
+      # 5. Build Docker Image
+      - name: Build Docker Image
+        run: |
+          echo "Building Docker image..."
+          docker build -t ${{ env.DOCKER_IMAGE_TAG }} -f ${{ github.workspace }}/deployment/docker/Dockerfile ${{ github.workspace }}
+          echo "Listing built images:"
+          docker images | grep helloworldservice
+
+      # 6. Set up Minikube
+      - name: Set up Minikube
+        uses: manusa/actions-setup-minikube@v2.4.3
+        with:
+          minikube version: 'latest'
+          driver: docker
+          startArgs: '--memory=4096 --cpus=2 --ports=8290,9164'
+
+      # 7. Load Docker Image into Minikube
+      - name: Load Docker Image to Minikube
+        run: |
+          echo "Loading Docker image into Minikube..."
+          minikube image load ${{ env.DOCKER_IMAGE_TAG }}
+
+      # 8. Deploy to Minikube
+      - name: Deploy to Minikube
+        run: |
+          echo "Applying Kubernetes manifests..."
+          cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: wso2mi-deployment
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: wso2mi
+            template:
+              metadata:
+                labels:
+                  app: wso2mi
+              spec:
+                containers:
+                - name: wso2mi
+                  image: ${{ env.DOCKER_IMAGE_TAG }}
+                  imagePullPolicy: Never
+                  ports:
+                  - containerPort: 8290
+                  - containerPort: 9164
+                  env:
+                  - name: WSO2_SERVER_HOME
+                    value: "/home/wso2carbon/wso2mi-4.4.0"
+                  readinessProbe:
+                    httpGet:
+                      path: /management/health
+                      port: 9164
+                      scheme: HTTPS
+                    initialDelaySeconds: 40
+                    periodSeconds: 10
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: wso2mi-service
+          spec:
+            selector:
+              app: wso2mi
+            ports:
+            - name: http
+              port: 8290
+              targetPort: 8290
+            - name: https
+              port: 9164
+              targetPort: 9164
+            type: ClusterIP
+          EOF
+
+      # 9. Test Deployment and API
+      - name: Test Deployment and API
+        run: |
+          echo "Waiting for deployment to be ready..."
+          kubectl wait --for=condition=available deployment/wso2mi-deployment --timeout=300s
+          echo "Checking pod logs for CAR deployment..."
+          kubectl logs -l app=wso2mi > k8s_logs.txt
+          cat k8s_logs.txt
+          echo "Checking for errors in logs..."
+          grep -i "error" k8s_logs.txt || echo "No errors found in logs"
+          echo "Checking CAR deployment..."
+          grep "HelloWorldService_1.0.0" k8s_logs.txt || echo "No deployment message found for HelloWorldService_1.0.0"
+          echo "Port-forwarding to test API..."
+          kubectl port-forward svc/wso2mi-service 9164:9164 &
+          sleep 5
+          API_RESPONSE=$(curl -k -s -w "%{http_code}" https://localhost:9164/helloworld)
+          if [[ "$API_RESPONSE" =~ "200" ]]; then
+            echo "API is responding successfully!"
+          else
+            echo "Error: API test failed with response: $API_RESPONSE"
+            cat k8s_logs.txt
+            exit 1
+          fi
+
+      # 10. Upload Artifacts
+      - name: Upload Logs and CAR
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k8s-artifacts
+          path: |
+            k8s_logs.txt
+            target/*.car
+          retention-days: 7
