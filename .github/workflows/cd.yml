@@ -10,6 +10,10 @@ permissions:
   contents: read
   packages: write
 
+env:
+  DOCKER_IMAGE_TAG: helloworldservice:1.0.0
+  WSO2_SERVER_HOME: /home/wso2carbon/wso2mi-4.4.0
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
