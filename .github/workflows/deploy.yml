@@ -1,3 +1,4 @@
+
 name: Deploy WSO2 MI to Minikube
 
 on:
@@ -13,12 +14,16 @@ env:
 
 jobs:
   deploy-k8s:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-20.04  # Explicitly use Ubuntu 20.04
 
     steps:
       # 1. Checkout Repository
       - name: Checkout Repository
         uses: actions/checkout@v4
+      - name: Debug Repository Contents
+        run: |
+          echo "Listing repository contents:"
+          ls -laR ${{ github.workspace }}
 
       # 2. Set up JDK 11
       - name: Set up JDK 11
@@ -26,14 +31,24 @@ jobs:
         with:
           java-version: '11'
           distribution: 'temurin'
+      - name: Debug Java and Maven
+        run: |
+          echo "Java version:"
+          java -version
+          echo "Maven version:"
+          mvn --version
 
       # 3. Build CAR File
       - name: Build CAR File
         run: |
           echo "Building CAR file..."
-          mvn clean package
+          mvn clean package -X || { echo "Maven build failed"; exit 1; }
           echo "Listing target directory:"
           ls -la ${{ github.workspace }}/target/
+          if [ ! -f "${{ github.workspace }}/target/HelloWorldService_1.0.0.car" ]; then
+            echo "Error: CAR file not found in target/"
+            exit 1
+          fi
 
       # 4. Inspect and Copy CAR File
       - name: CAR File Location
@@ -57,7 +72,7 @@ jobs:
       - name: Build Docker Image
         run: |
           echo "Building Docker image..."
-          docker build -t ${{ env.DOCKER_IMAGE_TAG }} -f ${{ github.workspace }}/deployment/docker/Dockerfile ${{ github.workspace }}
+          docker build -t ${{ env.DOCKER_IMAGE_TAG }} -f ${{ github.workspace }}/deployment/docker/Dockerfile ${{ github.workspace }} || { echo "Docker build failed"; exit 1; }
           echo "Listing built images:"
           docker images | grep helloworldservice
 
@@ -67,13 +82,25 @@ jobs:
         with:
           minikube version: 'latest'
           driver: docker
-          startArgs: '--memory=4096 --cpus=2 --ports=8290,9164'
+          start args: '--memory=4096 --cpus=2 --ports=8290,9164'
+      - name: Debug Minikube Setup
+        run: |
+          echo "Minikube version:"
+          minikube version
+          echo "Minikube status:"
+          minikube status
+          echo "kubectl version:"
+          kubectl version --client
+          echo "kubectl cluster info:"
+          kubectl cluster-info
 
       # 7. Load Docker Image into Minikube
       - name: Load Docker Image to Minikube
         run: |
           echo "Loading Docker image into Minikube..."
-          minikube image load ${{ env.DOCKER_IMAGE_TAG }}
+          minikube image load ${{ env.DOCKER_IMAGE_TAG }} || { echo "Image load failed"; exit 1; }
+          echo "Listing Minikube images:"
+          minikube image ls | grep helloworldservice
 
       # 8. Deploy to Minikube
       - name: Deploy to Minikube
@@ -128,12 +155,14 @@ jobs:
               targetPort: 9164
             type: ClusterIP
           EOF
+          echo "Listing pods:"
+          kubectl get pods -o wide
 
       # 9. Test Deployment and API
       - name: Test Deployment and API
         run: |
           echo "Waiting for deployment to be ready..."
-          kubectl wait --for=condition=available deployment/wso2mi-deployment --timeout=300s
+          kubectl wait --for=condition=available deployment/wso2mi-deployment --timeout=300s || { echo "Deployment not ready"; exit 1; }
           echo "Checking pod logs for CAR deployment..."
           kubectl logs -l app=wso2mi > k8s_logs.txt
           cat k8s_logs.txt
