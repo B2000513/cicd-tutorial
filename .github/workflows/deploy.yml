@@ -84,7 +84,7 @@ jobs:
         uses: manusa/actions-setup-minikube@v2.7.2
         with:
           minikube version: 'latest'
-          kubernetes-version: '1.33.1'
+          kubernetes version: '1.33.1'
           driver: docker
           start args: '--memory=4096 --cpus=2 --ports=8290,9164'
       - name: Debug Minikube Setup
