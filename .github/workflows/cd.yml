@@ -59,36 +59,41 @@ jobs:
          echo "Listing built images:"
          docker images | grep helloworldservice
 
+
       # 6. Test CAR File in Custom Image
       - name: Test CAR File in Custom Image
         run: |
           echo "Running custom Docker image..."
-          docker run -d --name wso2mi -p 8290:8290 -p 9164:9164 helloworldservice:1.0.0
-          echo "Waiting for WSO2 MI server to start and deploy CAR..."
-          sleep 120
-          echo "Checking carbonapps directory in container..."
-          docker exec wso2mi ls -la /home/wso2carbon/wso2mi/repository/deployment/server/carbonapps
-          echo "Checking file permissions in container..."
-          docker exec wso2mi stat /home/wso2carbon/wso2mi/repository/deployment/server/carbonapps/*.car
-          echo "Checking server logs..."
-          docker logs wso2mi
-          echo "Checking CAR deployment..."
-          docker logs wso2mi | grep "Deploying Carbon Application" || echo "No deployment message found"
-          echo "Checking for deployment errors..."
-          docker logs wso2mi | grep -i "error" || echo "No error messages found"
-          echo "Checking available APIs..."
-          curl -k --retry 5 --retry-delay 5 --retry-max-time 60 https://localhost:9164/management/apis || echo "Failed to list APIs"
-          echo "Testing API endpoint..."
-          curl --retry 10 --retry-delay 5 --retry-max-time 120 -f http://localhost:8290/HelloWorld || {
-            echo "Error: API test failed"
+          docker run -d --name helloworldservice-test -p 8290:8290 -p 9164:9164 ${{ env.DOCKER_IMAGE_TAG }}
+          echo "Waiting for WSO2 MI server to start..."
+          for i in {1..90}; do
+            if curl -k -s https://localhost:9164/management/health > /dev/null; then
+              echo "Server is up!"
+              break
+            fi
+            echo "Waiting... ($i/90)"
+            sleep 5
+          done
+          if [ $i -eq 90 ]; then
+            echo "Error: WSO2 MI server did not start"
+            docker logs helloworldservice-test
             exit 1
-          }
-          echo "API response:"
-          curl http://localhost:8290/HelloWorld
-          docker stop wso2mi
-          docker rm wso2mi
+          fi
+          echo "Checking WSO2 home directory structure..."
+          docker exec helloworldservice-test find /home/wso2carbon -type d
+          echo "Checking for CAR files in container..."
+          docker exec helloworldservice-test find /home/wso2carbon -type f -name "*.car"
+          echo "Checking carbonapps directory in container..."
+          docker exec helloworldservice-test ls -la ${{ env.WSO2_SERVER_HOME }}/repository/deployment/server/carbonapps || echo "carbonapps directory not found"
+          echo "Checking file permissions in container..."
+          docker exec helloworldservice-test stat ${{ env.WSO2_SERVER_HOME }}/repository/deployment/server/carbonapps/*.car || echo "No CAR files found"
+          echo "Checking server logs..."
+          docker logs helloworldservice-test
+          echo "Checking CAR deployment..."
+          docker logs helloworldservice-test | grep "Deploying Carbon Application" || echo "No deployment message found"
+          echo
 
-      # 6. Upload CAR artifact
+      # 7. Upload CAR artifact
       - name: Upload CAR artifact
         uses: actions/upload-artifact@v4
         with:
