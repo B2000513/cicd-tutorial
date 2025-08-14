@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=wso2/wso2mi:4.4.0
+ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 COPY deployment/docker/CompositeApps/*.car ${WSO2_SERVER_HOME}/repository/deployment/server/carbonapps/
 COPY deployment/docker/resources/wso2carbon.jks ${WSO2_SERVER_HOME}/repository/resources/security/wso2carbon.jks
