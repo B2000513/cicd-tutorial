@@ -14,7 +14,7 @@ env:
 
 jobs:
   deploy-k8s:
-    runs-on: ubuntu-20.04  # Explicitly use Ubuntu 20.04
+    runs-on: ubuntu-latest 
 
     steps:
       # 1. Checkout Repository
