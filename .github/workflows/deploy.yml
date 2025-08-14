@@ -12,8 +12,8 @@ env:
   WSO2_SERVER_HOME: /home/wso2carbon/wso2mi-4.4.0
 
 jobs:
-  deploy-k8s:
-    runs-on: ubuntu-20.04  # Explicitly use Ubuntu 20.04
+  build-and-deploy:
+    runs-on: ubuntu-latest
 
     steps:
       # 1. Debug Runner Environment
@@ -71,22 +71,22 @@ jobs:
           mvn clean package -X || { echo "Maven build failed"; exit 1; }
           echo "Listing target directory:"
           ls -la ${{ github.workspace }}/target/
-          if [ ! -f "${{ github.workspace }}/target/HelloWorldService_1.0.0.car" ]; then
-            echo "Error: CAR file not found in target/"
+          CAR_FILE=$(find ${{ github.workspace }}/target -type f -name "*.car" | head -n 1)
+          if [ -z "$CAR_FILE" ]; then
+            echo "Error: No CAR file found"
             exit 1
           fi
+          echo "CAR file found: $CAR_FILE"
           echo "Checking CAR file contents:"
-          unzip -l "${{ github.workspace }}/target/HelloWorldService_1.0.0.car"
+          unzip -l "$CAR_FILE"
 
-      # 5. Inspect and Copy CAR File
-      - name: CAR File Location
+      # 5. Copy CAR File
+      - name: Copy CAR File
         run: |
           echo "Copying CAR file to deployment/docker/CompositeApps/"
           mkdir -p ${{ github.workspace }}/deployment/docker/CompositeApps
-          cp ${{ github.workspace }}/target/HelloWorldService_1.0.0.car ${{ github.workspace }}/deployment/docker/CompositeApps/
+          cp ${{ github.workspace }}/target/*.car ${{ github.workspace }}/deployment/docker/CompositeApps/
           ls -la ${{ github.workspace }}/deployment/docker/CompositeApps/
-          echo "Checking for keystore files:"
-          ls -la ${{ github.workspace }}/deployment/docker/resources/
 
       # 6. Build Docker Image
       - name: Build Docker Image
@@ -150,7 +150,7 @@ jobs:
                   - containerPort: 9164
                   env:
                   - name: WSO2_SERVER_HOME
-                    value: "/home/wso2carbon/wso2mi-4.4.0"
+                    value: "${{ env.WSO2_SERVER_HOME }}"
                   readinessProbe:
                     httpGet:
                       path: /management/health
@@ -189,7 +189,7 @@ jobs:
           echo "Checking for errors in logs..."
           grep -i "error" k8s_logs.txt || echo "No errors found in logs"
           echo "Checking CAR deployment..."
-          grep "HelloWorldService_1.0.0" k8s_logs.txt || echo "No deployment message found for HelloWorldService_1.0.0"
+          grep "Deploying Carbon Application" k8s_logs.txt || echo "No deployment message found"
           echo "Port-forwarding to test API..."
           kubectl port-forward svc/wso2mi-service 9164:9164 &
           sleep 5
@@ -202,13 +202,4 @@ jobs:
             exit 1
           fi
 
-      # 11. Upload Artifacts
-      - name: Upload Logs and CAR
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: k8s-artifacts
-          path: |
-            k8s_logs.txt
-            target/*.car
-          retention-days: 7
+    
