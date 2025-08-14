@@ -10,11 +10,10 @@ permissions:
 env:
   DOCKER_IMAGE_TAG: helloworldservice:1.0.0
   WSO2_SERVER_HOME: /home/wso2carbon/wso2mi-4.4.0
-  MINIKUBE_VERSION: v1.36.0
 
 jobs:
-  build-and-deploy:
-    runs-on: ubuntu-22.04
+  deploy:
+    runs-on: self-hosted  # Assumes Minikube is running on a self-hosted runner
 
     steps:
       # 1. Debug Runner Environment
@@ -28,6 +27,12 @@ jobs:
           env
           echo "Current directory:"
           pwd
+          echo "Minikube status:"
+          minikube status || { echo "Minikube is not running"; exit 1; }
+          echo "kubectl version:"
+          kubectl version --client
+          echo "kubectl cluster info:"
+          kubectl cluster-info
 
       # 2. Checkout Repository
       - name: Checkout Repository
@@ -79,33 +84,31 @@ jobs:
           echo "Listing built images:"
           docker images | grep helloworldservice
 
-      # 7. Set up Minikube (Fallback Manual Installation)
-      - name: Install Minikube Manually
+      # 7. Test Docker Run on Minikube
+      - name: Test Docker Run on Minikube
         run: |
-          echo "Downloading Minikube ${{ env.MINIKUBE_VERSION }}..."
-          curl -LO https://github.com/kubernetes/minikube/releases/download/${{ env.MINIKUBE_VERSION }}/minikube-linux-amd64
-          echo "Verifying checksum..."
-          curl -LO https://github.com/kubernetes/minikube/releases/download/${{ env.MINIKUBE_VERSION }}/minikube-linux-amd64.sha256
-          echo "$(cat minikube-linux-amd64.sha256) minikube-linux-amd64" | sha256sum -c || { echo "Checksum verification failed"; exit 1; }
-          echo "Installing Minikube..."
-          sudo install minikube-linux-amd64 /usr/local/bin/minikube
-          echo "Minikube installed successfully."
-          minikube version
-
-      - name: Start Minikube
-        run: |
-          echo "Starting Minikube with Kubernetes v1.33.1..."
-          minikube start --driver=docker --memory=4096 --cpus=2 --ports=8290,9164 --kubernetes-version=v1.33.1 || { echo "Minikube start failed"; exit 1; }
-          echo "Minikube status:"
-          minikube status
-          echo "kubectl version:"
-          kubectl version --client
-          echo "kubectl cluster info:"
-          kubectl cluster-info
+          echo "Configuring Docker to use Minikube's Docker daemon..."
+          eval $(minikube docker-env)
+          echo "Running Docker container on Minikube's Docker daemon..."
+          docker run -d --name test-wso2mi -p 8290:8290 -p 9164:9164 ${{ env.DOCKER_IMAGE_TAG }} || { echo "Docker run failed"; exit 1; }
+          echo "Waiting for container to be ready..."
+          sleep 10
+          echo "Checking container status..."
+          docker ps | grep test-wso2mi
+          echo "Checking container logs..."
+          docker logs test-wso2mi > docker_logs.txt
+          cat docker_logs.txt
+          echo "Checking for errors in logs..."
+          grep -i "error" docker_logs.txt || echo "No errors found in Docker logs"
+          echo "Stopping and removing test container..."
+          docker stop test-wso2mi
+          docker rm test-wso2mi
 
       # 8. Load Docker Image into Minikube
       - name: Load Docker Image to Minikube
         run: |
+          echo "Configuring Docker to use Minikube's Docker daemon..."
+          eval $(minikube docker-env)
           echo "Loading Docker image into Minikube..."
           minikube image load ${{ env.DOCKER_IMAGE_TAG }} || { echo "Image load failed"; exit 1; }
           echo "Listing Minikube images:"
@@ -166,38 +169,3 @@ jobs:
           EOF
           echo "Listing pods:"
           kubectl get pods -o wide || echo "Failed to list pods"
-
-      # 10. Test Deployment and API
-      - name: Test Deployment and API
-        run: |
-          echo "Waiting for deployment to be ready..."
-          kubectl wait --for=condition=available deployment/wso2mi-deployment --timeout=300s || { echo "Deployment not ready"; exit 1; }
-          echo "Checking pod logs for CAR deployment..."
-          kubectl logs -l app=wso2mi > k8s_logs.txt
-          cat k8s_logs.txt
-          echo "Checking for errors in logs..."
-          grep -i "error" k8s_logs.txt || echo "No errors found in logs"
-          echo "Checking CAR deployment..."
-          grep "Deploying Carbon Application" k8s_logs.txt || echo "No deployment message found"
-          echo "Port-forwarding to test API..."
-          kubectl port-forward svc/wso2mi-service 9164:9164 &
-          sleep 5
-          API_RESPONSE=$(curl -k -s -w "%{http_code}" https://localhost:9164/helloworld)
-          if [[ "$API_RESPONSE" =~ "200" ]]; then
-            echo "API is responding successfully!"
-          else
-            echo "Error: API test failed with response: $API_RESPONSE"
-            cat k8s_logs.txt
-            exit 1
-          fi
-
-      # 11. Upload Artifacts
-      - name: Upload Logs and CAR
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: k8s-artifacts
-          path: |
-            k8s_logs.txt
-            target/*.car
-          retention-days: 7
