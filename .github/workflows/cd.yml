@@ -106,6 +106,7 @@ jobs:
             docker logs helloworldservice-test
             exit 1
           fi
+          echo
           echo "Stopping test container..."
           docker stop helloworldservice-test
           docker rm helloworldservice-test
