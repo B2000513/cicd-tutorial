@@ -8,9 +8,9 @@ permissions:
   packages: write
 
 env:
-  DOCKER_IMAGE_TAG: helloworldservice:1.0.0
+  DOCKER_IMAGE_TAG: 1.0.0  # Updated to valid tag (just the version)
   WSO2_SERVER_HOME: /home/wso2carbon/wso2mi-4.4.0
-  DOCKERHUB_REPOSITORY: ianwong123 # Replace with your Docker Hub username
+  DOCKERHUB_REPOSITORY: ianwong123/helloworldservice  # Updated with your Docker Hub username
   MINIKUBE_VERSION: v1.36.0
   KUBERNETES_VERSION: v1.33.1
   WAIT_DURATION: 3600  # Wait for 1 hour (3600 seconds) for testing; adjust as needed (max 21600 for 6 hours)
