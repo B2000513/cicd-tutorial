@@ -10,7 +10,7 @@ permissions:
 env:
   DOCKER_IMAGE_TAG: helloworldservice:1.0.0
   WSO2_SERVER_HOME: /home/wso2carbon/wso2mi-4.4.0
-  DOCKERHUB_REPOSITORY: <your-dockerhub-username>/helloworldservice  # Replace with your Docker Hub username
+  DOCKERHUB_REPOSITORY: ianwong123/helloworldservice  # Replace with your Docker Hub username
   MINIKUBE_VERSION: v1.36.0
   KUBERNETES_VERSION: v1.33.1
   WAIT_DURATION: 3600  # Wait for 1 hour (3600 seconds) for testing; adjust as needed (max 21600 for 6 hours)
