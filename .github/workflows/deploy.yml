@@ -1,7 +1,7 @@
-name: Deploy WSO2 MI to Minikube
+name: Deploy WSO2 MI to Minikube with Tunneling
 
 on:
-  workflow_dispatch:  # Manual trigger via GitHub UI or API
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,10 +13,11 @@ env:
   DOCKERHUB_REPOSITORY: <your-dockerhub-username>/helloworldservice  # Replace with your Docker Hub username
   MINIKUBE_VERSION: v1.36.0
   KUBERNETES_VERSION: v1.33.1
+  WAIT_DURATION: 3600  # Wait for 1 hour (3600 seconds) for testing; adjust as needed (max 21600 for 6 hours)
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest  # GitHub-hosted runner
+    runs-on: ubuntu-latest
 
     steps:
       # 1. Debug Runner Environment
@@ -55,7 +56,7 @@ jobs:
       - name: Start Minikube
         run: |
           echo "Starting Minikube with Kubernetes ${{ env.KUBERNETES_VERSION }}..."
-          sudo sysctl fs.protected_regular=0  # Required for Minikube on GitHub runners
+          sudo sysctl fs.protected_regular=0
           minikube start --driver=docker --kubernetes-version=${{ env.KUBERNETES_VERSION }} --memory=4096 --cpus=2 --ports=8290,9164 || { echo "Minikube start failed"; exit 1; }
           echo "Minikube status:"
           minikube status
@@ -72,12 +73,6 @@ jobs:
         with:
           java-version: '11'
           distribution: 'temurin'
-      - name: Debug Java and Maven
-        run: |
-          echo "Java version:"
-          java -version
-          echo "Maven version:"
-          mvn --version
 
       # 6. Build CAR File
       - name: Build CAR File
@@ -124,29 +119,7 @@ jobs:
           echo "Pushing Docker image to Docker Hub..."
           docker push ${{ env.DOCKERHUB_REPOSITORY }}:${{ env.DOCKER_IMAGE_TAG }} || { echo "Docker push failed"; exit 1; }
 
-      # 11. Test Docker Run on Minikube
-      - name: Test Docker Run on Minikube
-        run: |
-          echo "Configuring Docker to use Minikube's Docker daemon..."
-          eval $(minikube docker-env)
-          echo "Pulling Docker image from Docker Hub..."
-          docker pull ${{ env.DOCKERHUB_REPOSITORY }}:${{ env.DOCKER_IMAGE_TAG }} || { echo "Docker pull failed"; exit 1; }
-          echo "Running Docker container on Minikube's Docker daemon..."
-          docker run -d --name test-wso2mi -p 8290:8290 -p 9164:9164 ${{ env.DOCKERHUB_REPOSITORY }}:${{ env.DOCKER_IMAGE_TAG }} || { echo "Docker run failed"; exit 1; }
-          echo "Waiting for container to be ready..."
-          sleep 10
-          echo "Checking container status..."
-          docker ps | grep test-wso2mi
-          echo "Checking container logs..."
-          docker logs test-wso2mi > docker_logs.txt
-          cat docker_logs.txt
-          echo "Checking for errors in logs..."
-          grep -i "error" docker_logs.txt || echo "No errors found in Docker logs"
-          echo "Stopping and removing test container..."
-          docker stop test-wso2mi
-          docker rm test-wso2mi
-
-      # 12. Load Docker Image to Minikube
+      # 11. Load Docker Image to Minikube
       - name: Load Docker Image to Minikube
         run: |
           echo "Configuring Docker to use Minikube's Docker daemon..."
@@ -156,7 +129,7 @@ jobs:
           echo "Listing Minikube images:"
           minikube image ls | grep helloworldservice
 
-      # 13. Deploy to Minikube
+      # 12. Deploy to Minikube with Multiple Ports
       - name: Deploy to Minikube
         run: |
           echo "Applying Kubernetes manifests..."
@@ -182,6 +155,8 @@ jobs:
                   ports:
                   - containerPort: 8290
                   - containerPort: 9164
+                  # Add more ports here if needed, e.g.:
+                  # - containerPort: 8080
                   env:
                   - name: WSO2_SERVER_HOME
                     value: "${{ env.WSO2_SERVER_HOME }}"
@@ -204,10 +179,76 @@ jobs:
             - name: http
               port: 8290
               targetPort: 8290
+              nodePort: 30080
             - name: https
               port: 9164
               targetPort: 9164
-            type: ClusterIP
+              nodePort: 30081
+            # Add more ports here if needed, e.g.:
+            # - name: custom-port
+            #   port: 8080
+            #   targetPort: 8080
+            #   nodePort: 30082
+            type: NodePort
           EOF
           echo "Listing pods:"
-          kubectl get pods -o wide || echo "Failed to list pods"
+          kubectl get pods -o wide
+          echo "Listing services:"
+          kubectl get svc
+
+      # 13. Install ngrok
+      - name: Install ngrok
+        run: |
+          echo "Installing ngrok..."
+          curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+          sudo apt update
+          sudo apt install ngrok
+          ngrok version
+
+      # 14. Expose Minikube Service via ngrok
+      - name: Expose Minikube Service via ngrok
+        env:
+          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+        run: |
+          echo "Configuring ngrok..."
+          ngrok config add-authtoken $NGROK_AUTH_TOKEN
+          echo "Starting ngrok for port 30080 (HTTP)..."
+          ngrok http 30080 --log=stdout > ngrok_http.log &
+          echo "Starting ngrok for port 30081 (HTTPS)..."
+          ngrok http 30081 --log=stdout > ngrok_https.log &
+          # Add more ngrok tunnels for additional ports, e.g.:
+          # ngrok http 30082 --log=stdout > ngrok_custom.log &
+          sleep 10
+          echo "Retrieving ngrok public URLs..."
+          NGROK_HTTP_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[] | select(.config.addr | contains("30080")) | .public_url')
+          NGROK_HTTPS_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[] | select(.config.addr | contains("30081")) | .public_url')
+          # Add more URL retrieval for additional ports, e.g.:
+          # NGROK_CUSTOM_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[] | select(.config.addr | contains("30082")) | .public_url')
+          echo "Public URL for HTTP (8290): $NGROK_HTTP_URL"
+          echo "Public URL for HTTPS (9164): $NGROK_HTTPS_URL"
+          # echo "Public URL for Custom (8080): $NGROK_CUSTOM_URL"
+          echo "NGROK_HTTP_URL=$NGROK_HTTP_URL" >> $GITHUB_ENV
+          echo "NGROK_HTTPS_URL=$NGROK_HTTPS_URL" >> $GITHUB_ENV
+          # echo "NGROK_CUSTOM_URL=$NGROK_CUSTOM_URL" >> $GITHUB_ENV
+
+      # 15. Test API Availability
+      - name: Test API Availability
+        run: |
+          echo "Testing HTTP API at ${{ env.NGROK_HTTP_URL }}..."
+          curl -k -v ${{ env.NGROK_HTTP_URL }} || echo "HTTP check failed, check logs"
+          echo "Testing HTTPS API at ${{ env.NGROK_HTTPS_URL }}/management/health..."
+          curl -k -v ${{ env.NGROK_HTTPS_URL }}/management/health || echo "HTTPS health check failed, check logs"
+          # Add tests for additional ports, e.g.:
+          # curl -k -v ${{ env.NGROK_CUSTOM_URL }}/<endpoint> || echo "Custom port check failed, check logs"
+
+      # 16. Wait for Postman Testing
+      - name: Wait for Postman Testing
+        run: |
+          echo "Workflow will wait for ${{ env.WAIT_DURATION }} seconds to allow Postman testing."
+          echo "Use the following URLs in Postman:"
+          echo "HTTP (8290): ${{ env.NGROK_HTTP_URL }}"
+          echo "HTTPS (9164): ${{ env.NGROK_HTTPS_URL }}"
+          # echo "Custom (8080): ${{ env.NGROK_CUSTOM_URL }}"
+          sleep ${{ env.WAIT_DURATION }}
+          echo "Stopping workflow after wait period."
