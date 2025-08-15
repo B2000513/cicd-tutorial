@@ -92,8 +92,6 @@ jobs:
           docker exec helloworldservice-test stat ${{ env.WSO2_SERVER_HOME }}/repository/deployment/server/carbonapps/*.car || echo "No CAR files found"
           echo "Checking server logs..."
           docker logs helloworldservice-test
-          echo "Checking CAR deployment..."
-          docker logs helloworldservice-test | grep "Deploying Carbon Application" || echo "No deployment message found"
           echo "Testing HelloWorld API..."
           sleep 5 # Additional wait to ensure API is ready
           API_RESPONSE=$(curl -k -s -w "%{http_code}" http://localhost:8290/HelloWorld -o /tmp/api_response.txt)
