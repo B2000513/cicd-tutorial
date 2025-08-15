@@ -10,10 +10,13 @@ permissions:
 env:
   DOCKER_IMAGE_TAG: helloworldservice:1.0.0
   WSO2_SERVER_HOME: /home/wso2carbon/wso2mi-4.4.0
+  DOCKERHUB_REPOSITORY: <your-dockerhub-username>/helloworldservice  # Replace with your Docker Hub username
+  MINIKUBE_VERSION: v1.36.0
+  KUBERNETES_VERSION: v1.33.1
 
 jobs:
   deploy:
-    runs-on: self-hosted  # Assumes Minikube is running on a self-hosted runner
+    runs-on: ubuntu-latest  # GitHub-hosted runner
 
     steps:
       # 1. Debug Runner Environment
@@ -27,19 +30,43 @@ jobs:
           env
           echo "Current directory:"
           pwd
-          echo "Minikube status:"
-          minikube status || { echo "Minikube is not running"; exit 1; }
-          echo "kubectl version:"
+
+      # 2. Install Minikube and kubectl
+      - name: Install Minikube and kubectl
+        run: |
+          echo "Installing Minikube ${{ env.MINIKUBE_VERSION }}..."
+          curl -LO --fail https://github.com/kubernetes/minikube/releases/download/${{ env.MINIKUBE_VERSION }}/minikube-linux-amd64 || { echo "Failed to download Minikube"; exit 1; }
+          curl -LO --fail https://github.com/kubernetes/minikube/releases/download/${{ env.MINIKUBE_VERSION }}/minikube-linux-amd64.sha256 || { echo "Failed to download checksum"; exit 1; }
+          echo "$(cat minikube-linux-amd64.sha256) minikube-linux-amd64" | sha256sum -c || { echo "Checksum verification failed"; exit 1; }
+          chmod +x minikube-linux-amd64
+          sudo mv minikube-linux-amd64 /usr/local/bin/minikube
+          echo "Minikube installed successfully."
+          minikube version
+          echo "Installing kubectl ${{ env.KUBERNETES_VERSION }}..."
+          curl -LO --fail https://dl.k8s.io/release/${{ env.KUBERNETES_VERSION }}/bin/linux/amd64/kubectl || { echo "Failed to download kubectl"; exit 1; }
+          curl -LO --fail https://dl.k8s.io/${{ env.KUBERNETES_VERSION }}/bin/linux/amd64/kubectl.sha256 || { echo "Failed to download kubectl checksum"; exit 1; }
+          echo "$(cat kubectl.sha256) kubectl" | sha256sum -c || { echo "Checksum verification failed"; exit 1; }
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/kubectl
+          echo "kubectl installed successfully."
           kubectl version --client
+
+      # 3. Start Minikube
+      - name: Start Minikube
+        run: |
+          echo "Starting Minikube with Kubernetes ${{ env.KUBERNETES_VERSION }}..."
+          sudo sysctl fs.protected_regular=0  # Required for Minikube on GitHub runners
+          minikube start --driver=docker --kubernetes-version=${{ env.KUBERNETES_VERSION }} --memory=4096 --cpus=2 --ports=8290,9164 || { echo "Minikube start failed"; exit 1; }
+          echo "Minikube status:"
+          minikube status
           echo "kubectl cluster info:"
           kubectl cluster-info
 
-      # 2. Checkout Repository
+      # 4. Checkout Repository
       - name: Checkout Repository
         uses: actions/checkout@v4
-      
 
-      # 3. Set up JDK 11
+      # 5. Set up JDK 11
       - name: Set up JDK 11
         uses: actions/setup-java@v4
         with:
@@ -52,7 +79,7 @@ jobs:
           echo "Maven version:"
           mvn --version
 
-      # 4. Build CAR File
+      # 6. Build CAR File
       - name: Build CAR File
         run: |
           echo "Building CAR file..."
@@ -68,7 +95,7 @@ jobs:
           echo "Checking CAR file contents:"
           unzip -l "$CAR_FILE"
 
-      # 5. Copy CAR File
+      # 7. Copy CAR File
       - name: Copy CAR File
         run: |
           echo "Copying CAR file to deployment/docker/CompositeApps/"
@@ -76,21 +103,36 @@ jobs:
           cp ${{ github.workspace }}/target/*.car ${{ github.workspace }}/deployment/docker/CompositeApps/
           ls -la ${{ github.workspace }}/deployment/docker/CompositeApps/
 
-      # 6. Build Docker Image
+      # 8. Build Docker Image
       - name: Build Docker Image
         run: |
           echo "Building Docker image..."
-          docker build -t ${{ env.DOCKER_IMAGE_TAG }} -f ${{ github.workspace }}/deployment/docker/Dockerfile ${{ github.workspace }} || { echo "Docker build failed"; exit 1; }
+          docker build -t ${{ env.DOCKERHUB_REPOSITORY }}:${{ env.DOCKER_IMAGE_TAG }} -f ${{ github.workspace }}/deployment/docker/Dockerfile ${{ github.workspace }} || { echo "Docker build failed"; exit 1; }
           echo "Listing built images:"
           docker images | grep helloworldservice
 
-      # 7. Test Docker Run on Minikube
+      # 9. Log in to Docker Hub
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 10. Push Docker Image to Docker Hub
+      - name: Push Docker Image to Docker Hub
+        run: |
+          echo "Pushing Docker image to Docker Hub..."
+          docker push ${{ env.DOCKERHUB_REPOSITORY }}:${{ env.DOCKER_IMAGE_TAG }} || { echo "Docker push failed"; exit 1; }
+
+      # 11. Test Docker Run on Minikube
       - name: Test Docker Run on Minikube
         run: |
           echo "Configuring Docker to use Minikube's Docker daemon..."
           eval $(minikube docker-env)
+          echo "Pulling Docker image from Docker Hub..."
+          docker pull ${{ env.DOCKERHUB_REPOSITORY }}:${{ env.DOCKER_IMAGE_TAG }} || { echo "Docker pull failed"; exit 1; }
           echo "Running Docker container on Minikube's Docker daemon..."
-          docker run -d --name test-wso2mi -p 8290:8290 -p 9164:9164 ${{ env.DOCKER_IMAGE_TAG }} || { echo "Docker run failed"; exit 1; }
+          docker run -d --name test-wso2mi -p 8290:8290 -p 9164:9164 ${{ env.DOCKERHUB_REPOSITORY }}:${{ env.DOCKER_IMAGE_TAG }} || { echo "Docker run failed"; exit 1; }
           echo "Waiting for container to be ready..."
           sleep 10
           echo "Checking container status..."
@@ -104,17 +146,17 @@ jobs:
           docker stop test-wso2mi
           docker rm test-wso2mi
 
-      # 8. Load Docker Image into Minikube
+      # 12. Load Docker Image to Minikube
       - name: Load Docker Image to Minikube
         run: |
           echo "Configuring Docker to use Minikube's Docker daemon..."
           eval $(minikube docker-env)
           echo "Loading Docker image into Minikube..."
-          minikube image load ${{ env.DOCKER_IMAGE_TAG }} || { echo "Image load failed"; exit 1; }
+          minikube image load ${{ env.DOCKERHUB_REPOSITORY }}:${{ env.DOCKER_IMAGE_TAG }} || { echo "Image load failed"; exit 1; }
           echo "Listing Minikube images:"
           minikube image ls | grep helloworldservice
 
-      # 9. Deploy to Minikube
+      # 13. Deploy to Minikube
       - name: Deploy to Minikube
         run: |
           echo "Applying Kubernetes manifests..."
@@ -135,8 +177,8 @@ jobs:
               spec:
                 containers:
                 - name: wso2mi
-                  image: ${{ env.DOCKER_IMAGE_TAG }}
-                  imagePullPolicy: Never
+                  image: ${{ env.DOCKERHUB_REPOSITORY }}:${{ env.DOCKER_IMAGE_TAG }}
+                  imagePullPolicy: Always
                   ports:
                   - containerPort: 8290
                   - containerPort: 9164

@@ -94,7 +94,23 @@ jobs:
           docker logs helloworldservice-test
           echo "Checking CAR deployment..."
           docker logs helloworldservice-test | grep "Deploying Carbon Application" || echo "No deployment message found"
-          echo
+          echo "Testing HelloWorld API..."
+          sleep 5 # Additional wait to ensure API is ready
+          API_RESPONSE=$(curl -k -s -w "%{http_code}" http://localhost:8290/HelloWorld -o /tmp/api_response.txt)
+          echo "API Response Code: $API_RESPONSE"
+          if [ "$API_RESPONSE" -eq 200 ]; then
+            echo "API test successful! Response body:"
+            cat /tmp/api_response.txt
+          else
+            echo "API test failed with status code: $API_RESPONSE"
+            echo "Response body (if any):"
+            cat /tmp/api_response.txt
+            docker logs helloworldservice-test
+            exit 1
+          fi
+          echo "Stopping test container..."
+          docker stop helloworldservice-test
+          docker rm helloworldservice-test
 
       # 7. Upload CAR artifact
       - name: Upload CAR artifact
